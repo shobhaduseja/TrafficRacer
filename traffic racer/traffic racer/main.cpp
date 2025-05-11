@@ -56,46 +56,47 @@ public:
     }
 };
 
-
-class Police {
+class Police : public Obstacle {
 public:
-    sf::Sprite sprite;
-    float dy = 4;
-
-    Police(sf::Texture& texture, int x, int y) {
-        sprite.setTexture(texture);
-        sprite.setScale(0.7f, 0.7f);
-        sprite.setPosition(x, y);
+    Police(sf::Texture& texture, int x, int y) : Obstacle(texture, x, y) {
+        dy = 4;
     }
 
+    void reset() {
+        sprite.setPosition(150 + rand() % (displayWidth - 350), 0);
+        counted = false;
+    }
 };
 
 int main() {
     srand(static_cast<unsigned int>(time(0)));
 
-    sf::RenderWindow window(sf::VideoMode(displayWidth, displayHeight), "Traffic Racer | WATCH FOR COPS!!!");
+    sf::RenderWindow window(sf::VideoMode(displayWidth, displayHeight), "Traffic Racer | Watch Out For Cops!");
 
-    sf::Texture backgroundTexture, carTexture, policeTexture, obs1, obs2, obs3;
+    sf::Texture backgroundTexture, carTexture, policeTexture, obs1, obs2, obs3, gameOverTexture;
     backgroundTexture.loadFromFile("road.jpg");
     carTexture.loadFromFile("icons8-race-car-96.png");
     policeTexture.loadFromFile("icons8-police-64.png");
     obs1.loadFromFile("ob1.png");
     obs2.loadFromFile("ob2.png");
     obs3.loadFromFile("ob3.png");
+    gameOverTexture.loadFromFile("game-over.png");
 
     sf::Sprite background(backgroundTexture);
+    sf::Sprite gameOver(gameOverTexture);
     Car player(carTexture);
 
     std::vector<Obstacle> obstacles;
     std::vector<sf::Texture*> obsTextures = {&obs1, &obs2, &obs3};
 
     for (int i = 0; i < 6 + rand() % 3; i++) {
-        obstacles.emplace_back(*obsTextures[rand() % 3], 100 + rand() % 500, -200 + rand() % 200);
+        Obstacle obs(*obsTextures[rand() % 3], 100 + rand() % 500, -200 + rand() % 200);
+        obstacles.push_back(obs);
     }
 
     Police police(policeTexture, 150 + rand() % 400, 0);
-
     int score = 0;
+    bool gameOverFlag = false;
 
     sf::Font font;
     font.loadFromFile("Burbank Big Condensed Font.otf");
@@ -104,28 +105,54 @@ int main() {
     scoreText.setCharacterSize(25);
     scoreText.setFillColor(sf::Color::Black);
 
+    sf::Clock clock;
+    sf::Clock scoreClock; 
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
             if (event.type == sf::Event::Closed)
                 window.close();
-
-            if (event.type == sf::Event::KeyPressed) {
-                if (event.key.code == sf::Keyboard::Right) player.dx = 5;
-                if (event.key.code == sf::Keyboard::Left)  player.dx = -5;
-            } else if (event.type == sf::Event::KeyReleased) {
-                if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::Left)
-                    player.dx = 0;
+            if (event.type == sf::Event::KeyPressed && event.key.code == sf::Keyboard::R) { // Restart feature
+                score = 0;
+                gameOverFlag = false;
+                player.sprite.setPosition(400, 450);
+                for (auto& o : obstacles) o.reset();
+                police.reset();
+                scoreClock.restart(); // Reset score timer
+            }
+            if (!gameOverFlag) {
+                if (event.type == sf::Event::KeyPressed) {
+                    if (event.key.code == sf::Keyboard::Right) player.dx = 5;
+                    if (event.key.code == sf::Keyboard::Left)  player.dx = -5;
+                } else if (event.type == sf::Event::KeyReleased) {
+                    if (event.key.code == sf::Keyboard::Right || event.key.code == sf::Keyboard::Left) player.dx = 0;
+                }
             }
         }
 
         player.update();
+        if (!gameOverFlag) {
+            for (auto& o : obstacles) {
+                o.update();
+                if (o.sprite.getPosition().y > displayHeight && !o.counted) {
+                    score++;
+                    o.counted = true;
+                }
+                if (player.sprite.getGlobalBounds().intersects(o.sprite.getGlobalBounds())) {
+                    score -= 2;
+                    o.reset();
+                }
+            }
 
-        for (auto& o : obstacles) {
-            o.update();
-            if (o.sprite.getPosition().y > displayHeight && !o.counted) {
+            police.update();
+            if (player.sprite.getGlobalBounds().intersects(police.sprite.getGlobalBounds())) {
+                gameOverFlag = true;
+            }
+
+            // Increment score every 500ms
+            if (scoreClock.getElapsedTime().asMilliseconds() >= 500) {
                 score++;
-                o.counted = true;
+                scoreClock.restart();
             }
         }
 
@@ -133,13 +160,19 @@ int main() {
 
         window.clear();
         window.draw(background);
-        for (auto& o : obstacles) window.draw(o.sprite);
-        window.draw(police.sprite);  
+
+        for (auto& o : obstacles)
+            window.draw(o.sprite);
+
+        window.draw(police.sprite);
         window.draw(player.sprite);
         window.draw(scoreText);
-        window.display();
 
-        sf::sleep(sf::milliseconds(16));
+        if (gameOverFlag)
+            window.draw(gameOver);
+
+        window.display();
+        sf::sleep(sf::milliseconds(16)); // ~60 FPS
     }
 
     return 0;
